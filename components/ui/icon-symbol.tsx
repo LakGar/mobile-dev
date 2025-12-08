@@ -1,11 +1,14 @@
 // Fallback for using MaterialIcons on Android and web.
 
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
-import { ComponentProps } from 'react';
-import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { SymbolViewProps, SymbolWeight } from "expo-symbols";
+import { ComponentProps } from "react";
+import { OpaqueColorValue, type StyleProp, type TextStyle } from "react-native";
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
+type IconMapping = Record<
+  SymbolViewProps["name"],
+  ComponentProps<typeof MaterialIcons>["name"]
+>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
@@ -14,18 +17,41 @@ type IconSymbolName = keyof typeof MAPPING;
  * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
  */
 const MAPPING = {
-  'house.fill': 'home',
-  'paperplane.fill': 'send',
-  'chevron.left.forwardslash.chevron.right': 'code',
-  'chevron.right': 'chevron-right',
-  'chevron.down': 'keyboard-arrow-down',
-  'checkmark': 'check',
-  'location.fill': 'location-on',
-  'mappin.circle.fill': 'place',
-  'map.fill': 'map',
-  'square.and.arrow.up': 'share',
-  'arrow.up': 'arrow-upward',
-  'arrow.down': 'arrow-downward',
+  "house.fill": "home",
+  "person.fill": "person",
+  "paperplane.fill": "send",
+  "chevron.left.forwardslash.chevron.right": "code",
+  "chevron.right": "chevron-right",
+  "chevron.left": "chevron-left",
+  "chevron.down": "keyboard-arrow-down",
+  checkmark: "check",
+  "location.fill": "location-on",
+  "mappin.circle.fill": "place",
+  "map.fill": "map",
+  "square.and.arrow.up": "share",
+  "arrow.up": "arrow-upward",
+  "arrow.down": "arrow-downward",
+  "gearshape.fill": "settings",
+  "camera.fill": "camera-alt",
+  xmark: "close",
+  "lock.fill": "lock",
+  "envelope.fill": "email",
+  "bell.fill": "notifications",
+  "speaker.wave.2.fill": "volume-up",
+  "hand.tap.fill": "touch-app",
+  "lock.shield.fill": "security",
+  "eye.fill": "visibility",
+  "key.fill": "vpn-key",
+  "moon.fill": "dark-mode",
+  globe: "language",
+  "square.and.arrow.down.fill": "download",
+  "questionmark.circle.fill": "help-outline",
+  "doc.text.fill": "description",
+  "hand.raised.fill": "privacy-tip",
+  "info.circle.fill": "info",
+  "star.fill": "star",
+  "trash.fill": "delete",
+  "arrow.clockwise": "refresh",
 } as IconMapping;
 
 /**
@@ -45,5 +71,12 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  return (
+    <MaterialIcons
+      color={color}
+      size={size}
+      name={MAPPING[name]}
+      style={style}
+    />
+  );
 }
