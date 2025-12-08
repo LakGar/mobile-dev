@@ -14,7 +14,7 @@ export default function HomeScreen() {
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top + 20 }]}>
       <ScrollView>
-        <Header />
+      <Header />
         <Welcome />
         <Overview />
         <HomeZoneList />

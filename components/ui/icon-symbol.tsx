@@ -52,6 +52,9 @@ const MAPPING = {
   "star.fill": "star",
   "trash.fill": "delete",
   "arrow.clockwise": "refresh",
+  "figure.run": "fitness-center",
+  "cup.and.saucer.fill": "local-cafe",
+  "tree.fill": "park",
 } as IconMapping;
 
 /**

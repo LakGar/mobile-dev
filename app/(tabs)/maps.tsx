@@ -5,7 +5,7 @@ import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -55,6 +55,49 @@ export default function MapsScreen() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [address, setAddress] = useState<string | null>(null);
+  const [mainLocationCoords, setMainLocationCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const mapRef = React.useRef<MapView>(null);
+
+  // Nearby locations - calculated relative to main location (spread further apart)
+  const getNearbyLocations = () => {
+    if (!mainLocationCoords) return [];
+
+    return [
+      {
+        id: 1,
+        name: "Fitness Center",
+        type: "gym",
+        latitude: mainLocationCoords.latitude + 0.008, // ~800m north
+        longitude: mainLocationCoords.longitude + 0.005, // ~500m east
+        radius: 150,
+        icon: "figure.run",
+        color: "#FF6B6B", // Red for gym
+      },
+      {
+        id: 2,
+        name: "Coffee Shop",
+        type: "cafe",
+        latitude: mainLocationCoords.latitude - 0.006, // ~600m south
+        longitude: mainLocationCoords.longitude + 0.008, // ~800m east
+        radius: 100,
+        icon: "cup.and.saucer.fill",
+        color: "#4ECDC4", // Teal for cafe
+      },
+      {
+        id: 3,
+        name: "Park",
+        type: "park",
+        latitude: mainLocationCoords.latitude - 0.008, // ~800m south
+        longitude: mainLocationCoords.longitude - 0.006, // ~600m west
+        radius: 200,
+        icon: "tree.fill",
+        color: "#95E1D3", // Green for park
+      },
+    ];
+  };
 
   const fetchLocation = async () => {
     setIsLoadingLocation(true);
@@ -88,6 +131,10 @@ export default function MapsScreen() {
         // Set the address
         setAddress(addressToGeocode);
         setLocation(geocodedLocation);
+        setMainLocationCoords({
+          latitude: geocodedLocation.coords.latitude,
+          longitude: geocodedLocation.coords.longitude,
+        });
         setLocationError(null);
         setIsLoadingLocation(false);
         return;
@@ -189,6 +236,10 @@ export default function MapsScreen() {
         }
 
         setLocation(finalLocation);
+        setMainLocationCoords({
+          latitude: finalLocation.coords.latitude,
+          longitude: finalLocation.coords.longitude,
+        });
         setLocationError(null);
       } catch (error) {
         console.error("Error getting location:", error);
@@ -293,6 +344,26 @@ export default function MapsScreen() {
   });
 
   const handleLocationPress = (locationId: number) => {
+    const nearbyLocations = getNearbyLocations();
+    const selectedLocation = nearbyLocations.find(
+      (loc) => loc.id === locationId
+    );
+
+    if (selectedLocation && mapRef.current) {
+      // Center map on selected location without hiding others
+      mapRef.current.animateToRegion(
+        {
+          latitude: selectedLocation.latitude,
+          longitude: selectedLocation.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        500
+      );
+    }
+  };
+
+  const handlePreviousLocationPress = (locationId: number) => {
     router.push("/zone-detail");
   };
 
@@ -311,24 +382,20 @@ export default function MapsScreen() {
           ) : location ? (
             <>
               <MapView
+                ref={mapRef}
                 style={styles.map}
                 initialRegion={{
                   latitude: location.coords.latitude,
                   longitude: location.coords.longitude,
-                  latitudeDelta: 0.005,
-                  longitudeDelta: 0.005,
-                }}
-                region={{
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
-                  latitudeDelta: 0.005,
-                  longitudeDelta: 0.005,
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
                 }}
                 showsUserLocation={true}
                 showsMyLocationButton={false}
                 mapType="standard"
-                followsUserLocation={true}
+                followsUserLocation={false}
               >
+                {/* Main location marker - Apple Maps style (blue dot with grey circle) */}
                 <Marker
                   coordinate={{
                     latitude: location.coords.latitude,
@@ -341,18 +408,63 @@ export default function MapsScreen() {
                       6
                     )}, Lng: ${location.coords.longitude.toFixed(6)}`
                   }
-                />
-                {/* 300 meter proximity circle */}
+                >
+                  <View style={styles.appleMarkerContainer}>
+                    {/* Grey outer circle */}
+                    <View style={styles.appleMarkerOuterCircle} />
+                    {/* Blue inner dot */}
+                    <View style={styles.appleMarkerInnerDot} />
+                  </View>
+                </Marker>
+                {/* 200 meter proximity circle for main location - grey like Apple Maps */}
                 <Circle
                   center={{
                     latitude: location.coords.latitude,
                     longitude: location.coords.longitude,
                   }}
                   radius={200}
-                  strokeWidth={2}
-                  strokeColor={textColor + "40"}
-                  fillColor={textColor + "15"}
+                  strokeWidth={1}
+                  strokeColor="rgba(150, 150, 150, 0.5)"
+                  fillColor="rgba(200, 200, 200, 0.1)"
                 />
+                {/* Nearby locations with different icons and colors */}
+                {mainLocationCoords &&
+                  getNearbyLocations().map((nearby) => (
+                    <React.Fragment key={nearby.id}>
+                      <Marker
+                        coordinate={{
+                          latitude: nearby.latitude,
+                          longitude: nearby.longitude,
+                        }}
+                        title={nearby.name}
+                        description={`${nearby.type} - ${nearby.radius}m radius`}
+                        onPress={() => handleLocationPress(nearby.id)}
+                      >
+                        <View
+                          style={[
+                            styles.customMarker,
+                            { backgroundColor: nearby.color },
+                          ]}
+                        >
+                          <IconSymbol
+                            name={nearby.icon as any}
+                            size={24}
+                            color="#fff"
+                          />
+                        </View>
+                      </Marker>
+                      <Circle
+                        center={{
+                          latitude: nearby.latitude,
+                          longitude: nearby.longitude,
+                        }}
+                        radius={nearby.radius}
+                        strokeWidth={2}
+                        strokeColor={nearby.color + "80"}
+                        fillColor={nearby.color + "20"}
+                      />
+                    </React.Fragment>
+                  ))}
               </MapView>
               {/* Location Label Overlay */}
               <View style={styles.locationLabelContainer}>
@@ -437,7 +549,7 @@ export default function MapsScreen() {
                     styles.locationCard,
                     { backgroundColor: location.color, borderColor },
                   ]}
-                  onPress={() => handleLocationPress(location.id)}
+                  onPress={() => handlePreviousLocationPress(location.id)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.locationMapContainer}>
@@ -689,5 +801,72 @@ const styles = StyleSheet.create({
   },
   cardLocationText: {
     fontSize: 12,
+  },
+  customMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  appleMarkerContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 40,
+    height: 40,
+  },
+  appleMarkerOuterCircle: {
+    position: "absolute",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(150, 150, 150, 0.3)",
+    borderWidth: 2,
+    borderColor: "rgba(150, 150, 150, 0.5)",
+  },
+  appleMarkerInnerDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#007AFF", // Apple Maps blue
+    borderWidth: 2,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  backButton: {
+    position: "absolute",
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
 });
