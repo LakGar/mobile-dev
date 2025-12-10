@@ -4,52 +4,16 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ThemedText } from "../themed-text";
 import { IconSymbol } from "./icon-symbol";
-
-type ActivityType = "enter" | "exit";
-
-interface Activity {
-  id: number;
-  zoneName: string;
-  type: ActivityType;
-  time: string;
-  icon: string;
-}
+import { useActivityStore } from "@/stores/useActivityStore";
+import { ActivityType } from "@/types";
 
 const RecentActivity = () => {
   const muteTextColor = useThemeColor({}, "muteText");
   const textColor = useThemeColor({}, "text");
   const borderColor = useThemeColor({}, "muteText");
 
-  const activities: Activity[] = [
-    {
-      id: 1,
-      zoneName: "Home Zone",
-      type: "enter",
-      time: "2 hours ago",
-      icon: "house.fill",
-    },
-    {
-      id: 2,
-      zoneName: "Work Zone",
-      type: "exit",
-      time: "5 hours ago",
-      icon: "location.fill",
-    },
-    {
-      id: 3,
-      zoneName: "Gym Zone",
-      type: "enter",
-      time: "1 day ago",
-      icon: "map.fill",
-    },
-    {
-      id: 4,
-      zoneName: "Park Zone",
-      type: "exit",
-      time: "2 days ago",
-      icon: "mappin.circle.fill",
-    },
-  ];
+  const { getRecentActivities } = useActivityStore();
+  const activities = getRecentActivities(4);
 
   const getActivityIcon = (type: ActivityType) => {
     return type === "enter" ? "arrow.down" : "arrow.up";
@@ -63,72 +27,85 @@ const RecentActivity = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <ThemedText style={styles.headerText}>Recent Activity</ThemedText>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/activity-detail")}>
           <Text style={[styles.seeAllButtonText, { color: muteTextColor }]}>
             See All
           </Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.activityList}>
-        {activities.map((activity, index) => (
-          <View key={activity.id}>
-            <TouchableOpacity
-              style={styles.activityItem}
-              onPress={() => router.push("/zone-detail")}
-              activeOpacity={0.7}
-            >
-              <View style={styles.activityLeft}>
+      {activities.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <IconSymbol
+            name="clock"
+            size={48}
+            color={muteTextColor}
+          />
+          <Text style={[styles.emptyText, { color: muteTextColor }]}>
+            No recent activity
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.activityList}>
+          {activities.map((activity, index) => (
+            <View key={activity.id}>
+              <TouchableOpacity
+                style={styles.activityItem}
+                onPress={() => router.push(`/zone-detail?id=${activity.zoneId}`)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.activityLeft}>
+                  <View
+                    style={[
+                      styles.iconContainer,
+                      { backgroundColor: getActivityColor(activity.type) + "20" },
+                    ]}
+                  >
+                    <IconSymbol
+                      name={activity.icon as any}
+                      size={20}
+                      color={getActivityColor(activity.type)}
+                    />
+                  </View>
+                  <View style={styles.activityContent}>
+                    <Text style={[styles.activityZoneName, { color: textColor }]}>
+                      {activity.zoneName}
+                    </Text>
+                    <Text style={[styles.activityTime, { color: muteTextColor }]}>
+                      {activity.time}
+                    </Text>
+                  </View>
+                </View>
                 <View
                   style={[
-                    styles.iconContainer,
+                    styles.activityTypeBadge,
                     { backgroundColor: getActivityColor(activity.type) + "20" },
                   ]}
                 >
                   <IconSymbol
-                    name={activity.icon as any}
-                    size={20}
+                    name={getActivityIcon(activity.type) as any}
+                    size={14}
                     color={getActivityColor(activity.type)}
                   />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={[styles.activityZoneName, { color: textColor }]}>
-                    {activity.zoneName}
+                  <Text
+                    style={[
+                      styles.activityTypeText,
+                      { color: getActivityColor(activity.type) },
+                    ]}
+                  >
+                    {activity.type.charAt(0).toUpperCase() +
+                      activity.type.slice(1)}
                   </Text>
-                  <Text style={[styles.activityTime, { color: muteTextColor }]}>
-                    {activity.time}
-                  </Text>
                 </View>
-              </View>
-              <View
-                style={[
-                  styles.activityTypeBadge,
-                  { backgroundColor: getActivityColor(activity.type) + "20" },
-                ]}
-              >
-                <IconSymbol
-                  name={getActivityIcon(activity.type) as any}
-                  size={14}
-                  color={getActivityColor(activity.type)}
+              </TouchableOpacity>
+              {index < activities.length - 1 && (
+                <View
+                  style={[styles.divider, { backgroundColor: borderColor }]}
                 />
-                <Text
-                  style={[
-                    styles.activityTypeText,
-                    { color: getActivityColor(activity.type) },
-                  ]}
-                >
-                  {activity.type.charAt(0).toUpperCase() +
-                    activity.type.slice(1)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            {index < activities.length - 1 && (
-              <View
-                style={[styles.divider, { backgroundColor: borderColor }]}
-              />
-            )}
-          </View>
-        ))}
-      </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 };
@@ -202,5 +179,16 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0.2,
     marginLeft: 52,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: "center",
   },
 });

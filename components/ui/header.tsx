@@ -1,5 +1,6 @@
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useZoneStore } from "@/stores/useZoneStore";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -87,6 +88,7 @@ const Header = () => {
   const textColor = useThemeColor({}, "text");
   const backgroundColor = useThemeColor({}, "background");
   const colorScheme = useColorScheme();
+  const { zones } = useZoneStore();
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -99,25 +101,23 @@ const Header = () => {
       ? "rgba(42, 42, 42, 0.8)" // muteText dark mode with opacity
       : "rgba(199, 199, 204, 0.8)"; // muteText light mode with opacity
 
-  // Sample results - replace with actual search results
+  // Filter zones based on search query
   const results = showResults
-    ? [
-        {
-          id: 1,
-          title: "Sample Location 1",
-          description: "This is a sample description",
-        },
-        {
-          id: 2,
-          title: "Sample Location 2",
-          description: "Another location description",
-        },
-        {
-          id: 3,
-          title: "Sample Location 3",
-          description: "Third location description",
-        },
-      ]
+    ? zones
+        .filter(
+          (zone) =>
+            zone.title.toLowerCase().includes(search.toLowerCase()) ||
+            zone.address.toLowerCase().includes(search.toLowerCase()) ||
+            zone.location.toLowerCase().includes(search.toLowerCase())
+        )
+        .slice(0, 5)
+        .map((zone) => ({
+          id: zone.id,
+          title: zone.title,
+          description: `${zone.address}, ${zone.location}`,
+          icon: zone.icon,
+          color: zone.color,
+        }))
     : [];
 
   useEffect(() => {
@@ -189,12 +189,20 @@ const Header = () => {
                 <View key={result.id}>
                   <TouchableOpacity
                     style={[styles.searchResultItem, {}]}
-                    onPress={() => router.push("/zone-detail")}
+                    onPress={() => router.push(`/zone-detail?id=${result.id}`)}
                   >
-                    <Image
-                      source={require("@/assets/images/icon.png")}
-                      style={styles.resultImage}
-                    />
+                    <View
+                      style={[
+                        styles.resultIconContainer,
+                        { backgroundColor: result.color },
+                      ]}
+                    >
+                      <IconSymbol
+                        name={result.icon as any}
+                        size={24}
+                        color="#000000"
+                      />
+                    </View>
                     <View style={styles.resultTextContainer}>
                       <Text style={[styles.resultTitle, { color: textColor }]}>
                         {result.title}
@@ -210,7 +218,9 @@ const Header = () => {
                     </View>
                     <TouchableOpacity
                       style={styles.navigateButton}
-                      onPress={() => router.push("/zone-detail")}
+                      onPress={() =>
+                        router.push(`/zone-detail?id=${result.id}`)
+                      }
                     >
                       <IconSymbol
                         name="arrow.right"
@@ -329,11 +339,12 @@ const styles = StyleSheet.create({
     marginLeft: 20,
     opacity: 0.2,
   },
-  resultImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    zIndex: 2,
+  resultIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   resultTextContainer: {
     flex: 1,

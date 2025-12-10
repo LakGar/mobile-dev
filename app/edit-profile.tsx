@@ -1,9 +1,12 @@
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { ImagePickerModal } from "@/components/ui/image-picker";
+import { useToast } from "@/components/ui/toast-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useUserStore } from "@/stores/useUserStore";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -34,12 +37,22 @@ export default function EditProfileModal() {
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
 
-  const [username, setUsername] = useState("lakshaygarg");
-  const [name, setName] = useState("Lakshay Garg");
-  const [bio, setBio] = useState(
-    "Zone management enthusiast\n📍 Philadelphia, PA"
-  );
-  const [profileImage] = useState(require("@/assets/images/icon.png"));
+  const { user, updateUser } = useUserStore();
+  const [username, setUsername] = useState(user.username);
+  const [name, setName] = useState(user.name);
+  const [bio, setBio] = useState(user.bio);
+  const [phone, setPhone] = useState(user.phone || "");
+  const [gender, setGender] = useState(user.gender || "");
+  const [profileImage, setProfileImage] = useState(user.profileImage);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+
+  useEffect(() => {
+    setUsername(user.username);
+    setName(user.name);
+    setBio(user.bio);
+    setPhone(user.phone || "");
+    setGender(user.gender || "");
+  }, [user]);
 
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -74,9 +87,24 @@ export default function EditProfileModal() {
     router.back();
   };
 
+  const { showToast } = useToast();
+
   const handleSave = () => {
-    // Handle save logic here
+    updateUser({
+      username,
+      name,
+      bio,
+      phone,
+      gender,
+      profileImage:
+        typeof profileImage === "string" ? { uri: profileImage } : profileImage,
+    });
+    showToast("Profile updated successfully!");
     router.back();
+  };
+
+  const handleImageSelected = (uri: string) => {
+    setProfileImage({ uri });
   };
 
   return (
@@ -138,6 +166,7 @@ export default function EditProfileModal() {
                         styles.changePhotoButton,
                         { backgroundColor: backgroundColor, borderColor },
                       ]}
+                      onPress={() => setShowImagePicker(true)}
                     >
                       <IconSymbol
                         name="camera.fill"
@@ -146,7 +175,7 @@ export default function EditProfileModal() {
                       />
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowImagePicker(true)}>
                     <Text
                       style={[styles.changePhotoText, { color: textColor }]}
                     >
@@ -232,7 +261,7 @@ export default function EditProfileModal() {
                       styles.input,
                       { color: muteTextColor, borderColor },
                     ]}
-                    value="lakshay@example.com"
+                    value={user.email}
                     placeholder="Enter email"
                     placeholderTextColor={muteTextColor}
                     editable={false}
@@ -251,6 +280,8 @@ export default function EditProfileModal() {
                   </Text>
                   <TextInput
                     style={[styles.input, { color: textColor, borderColor }]}
+                    value={phone}
+                    onChangeText={setPhone}
                     placeholder="Enter phone number"
                     placeholderTextColor={muteTextColor}
                     keyboardType="phone-pad"
@@ -264,6 +295,8 @@ export default function EditProfileModal() {
                   </Text>
                   <TextInput
                     style={[styles.input, { color: textColor, borderColor }]}
+                    value={gender}
+                    onChangeText={setGender}
                     placeholder="Select gender"
                     placeholderTextColor={muteTextColor}
                   />
@@ -273,6 +306,11 @@ export default function EditProfileModal() {
           </Animated.View>
         </GestureDetector>
       </ThemedView>
+      <ImagePickerModal
+        visible={showImagePicker}
+        onClose={() => setShowImagePicker(false)}
+        onImageSelected={handleImageSelected}
+      />
     </GestureHandlerRootView>
   );
 }

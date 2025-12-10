@@ -1,0 +1,94 @@
+// Prisma schema for Zones app
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  username      String   @unique
+  name          String
+  bio           String?
+  profileImageUrl String? @map("profile_image_url")
+  phone         String?
+  gender        String?
+  streak        Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  zones     Zone[]
+  activities Activity[]
+  sessions  Session[]
+
+  @@map("users")
+}
+
+model Zone {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  title            String
+  address          String
+  location         String
+  latitude         Decimal  @db.Decimal(10, 8)
+  longitude        Decimal  @db.Decimal(11, 8)
+  radius           Int      @default(200)
+  icon             String
+  color            String
+  description      String?
+  notificationOption String @default("both") @map("notification_option")
+  notificationText String  @default("You have entered the zone") @map("notification_text")
+  imageUrl         String? @map("image_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities Activity[]
+
+  @@index([userId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("zones")
+}
+
+model Activity {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  zoneId    String   @map("zone_id")
+  zoneName  String   @map("zone_name")
+  type      String   // "enter" or "exit"
+  timestamp BigInt
+  icon      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  zone Zone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([zoneId])
+  @@index([userId, timestamp(sort: Desc)])
+  @@index([zoneId, timestamp(sort: Desc)])
+  @@map("activities")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+

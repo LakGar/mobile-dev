@@ -1,17 +1,22 @@
 import { ThemedView } from "@/components/themed-view";
+import { ErrorState } from "@/components/ui/error-state";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useZoneStore } from "@/stores/useZoneStore";
+import { Place, searchPlacesEnhanced } from "@/utils/places";
+import { shareZone } from "@/utils/share";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -38,10 +43,6 @@ export default function MapsScreen() {
   const textColor = useThemeColor({}, "text");
   const backgroundColor = useThemeColor({}, "background");
   const borderColor = useThemeColor({}, "muteText");
-  const color1 = useThemeColor({}, "color1");
-  const color2 = useThemeColor({}, "color2");
-  const color3 = useThemeColor({}, "color3");
-  const color4 = useThemeColor({}, "color4");
   const insets = useSafeAreaInsets();
 
   // Start at minimum height (25% visible, so translate up by the difference)
@@ -59,196 +60,85 @@ export default function MapsScreen() {
     latitude: number;
     longitude: number;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [selectedPlaces, setSelectedPlaces] = useState<Place[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(
+    null
+  );
   const mapRef = React.useRef<MapView>(null);
+  const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
-  // Nearby locations - calculated relative to main location (spread further apart)
-  const getNearbyLocations = () => {
-    if (!mainLocationCoords) return [];
+  const { zones } = useZoneStore();
 
-    return [
-      {
-        id: 1,
-        name: "Fitness Center",
-        type: "gym",
-        latitude: mainLocationCoords.latitude + 0.008, // ~800m north
-        longitude: mainLocationCoords.longitude + 0.005, // ~500m east
-        radius: 150,
-        icon: "figure.run",
-        color: "#FF6B6B", // Red for gym
-      },
-      {
-        id: 2,
-        name: "Coffee Shop",
-        type: "cafe",
-        latitude: mainLocationCoords.latitude - 0.006, // ~600m south
-        longitude: mainLocationCoords.longitude + 0.008, // ~800m east
-        radius: 100,
-        icon: "cup.and.saucer.fill",
-        color: "#4ECDC4", // Teal for cafe
-      },
-      {
-        id: 3,
-        name: "Park",
-        type: "park",
-        latitude: mainLocationCoords.latitude - 0.008, // ~800m south
-        longitude: mainLocationCoords.longitude - 0.006, // ~600m west
-        radius: 200,
-        icon: "tree.fill",
-        color: "#95E1D3", // Green for park
-      },
-    ];
-  };
+  // Filter zones by icon type
+  const filteredZones = selectedZoneFilter
+    ? zones.filter((zone) => zone.icon === selectedZoneFilter)
+    : zones;
+
+  // Display actual zones on the map
+  const displayZones = filteredZones;
 
   const fetchLocation = async () => {
     setIsLoadingLocation(true);
     setLocationError(null);
 
     try {
-      // Geocode the specific address
-      const addressToGeocode = "318 orchard ave sunnyvale 94085 CA";
-      console.log("Geocoding address:", addressToGeocode);
-
-      const geocodeResult = await Location.geocodeAsync(addressToGeocode);
-
-      if (geocodeResult && geocodeResult.length > 0) {
-        const locationData = geocodeResult[0];
-        console.log("Geocoded location:", locationData);
-
-        // Create a location object from geocoded data
-        const geocodedLocation: Location.LocationObject = {
-          coords: {
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            altitude: null,
-            accuracy: 10, // Geocoded addresses are typically accurate to ~10 meters
-            altitudeAccuracy: null,
-            heading: null,
-            speed: null,
-          },
-          timestamp: Date.now(),
-        };
-
-        // Set the address
-        setAddress(addressToGeocode);
-        setLocation(geocodedLocation);
-        setMainLocationCoords({
-          latitude: geocodedLocation.coords.latitude,
-          longitude: geocodedLocation.coords.longitude,
-        });
-        setLocationError(null);
+      // Request location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setLocationError(
+          "Location permission denied. Please grant location access in settings."
+        );
         setIsLoadingLocation(false);
         return;
-      } else {
-        throw new Error("Address not found");
       }
-    } catch (geocodeError) {
-      console.error("Geocoding error:", geocodeError);
-      // Fallback to GPS location if geocoding fails
+
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const coords = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      };
+
+      // Reverse geocode to get address
       try {
-        // Check if location services are enabled
-        const servicesEnabled = await Location.hasServicesEnabledAsync();
-        if (!servicesEnabled) {
-          setLocationError(
-            "Location services are disabled. Please enable them in settings."
-          );
-          setIsLoadingLocation(false);
-          return;
+        const reverseGeocode = await Location.reverseGeocodeAsync(coords);
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          const fullAddress = [
+            addr.street,
+            addr.city,
+            addr.region,
+            addr.postalCode,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          setAddress(fullAddress || `${addr.city || ""}, ${addr.region || ""}`);
         }
-
-        // Request location permissions
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          setLocationError(
-            "Location permission denied. Please grant location access in settings."
-          );
-          setIsLoadingLocation(false);
-          return;
-        }
-
-        // Get current location with highest accuracy
-        const currentLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
-          mayShowUserSettingsDialog: true,
-        });
-
-        console.log("Location fetched successfully:", {
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          accuracy: currentLocation.coords.accuracy,
-          altitude: currentLocation.coords.altitude,
-        });
-
-        // Verify location accuracy - if accuracy is too poor (> 100 meters), try again
-        let finalLocation = currentLocation;
-        if (
-          currentLocation.coords.accuracy &&
-          currentLocation.coords.accuracy > 100
-        ) {
-          console.warn(
-            "Location accuracy is poor, trying again...",
-            currentLocation.coords.accuracy
-          );
-          // Try once more with highest accuracy
-          const retryLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-          });
-          console.log("Retry location:", {
-            latitude: retryLocation.coords.latitude,
-            longitude: retryLocation.coords.longitude,
-            accuracy: retryLocation.coords.accuracy,
-          });
-          finalLocation = retryLocation;
-        }
-
-        // Reverse geocode to get address
-        try {
-          const reverseGeocode = await Location.reverseGeocodeAsync({
-            latitude: finalLocation.coords.latitude,
-            longitude: finalLocation.coords.longitude,
-          });
-
-          if (reverseGeocode && reverseGeocode.length > 0) {
-            const addr = reverseGeocode[0];
-            const fullAddress = [
-              addr.street,
-              addr.city,
-              addr.region,
-              addr.postalCode,
-            ]
-              .filter(Boolean)
-              .join(", ");
-
-            console.log("Reverse geocoded address:", fullAddress);
-            console.log(
-              "City:",
-              addr.city,
-              "Region:",
-              addr.region,
-              "Street:",
-              addr.street
-            );
-            setAddress(
-              fullAddress || `${addr.city || ""}, ${addr.region || ""}`
-            );
-          }
-        } catch (reverseGeocodeError) {
-          console.error("Reverse geocoding error:", reverseGeocodeError);
-        }
-
-        setLocation(finalLocation);
-        setMainLocationCoords({
-          latitude: finalLocation.coords.latitude,
-          longitude: finalLocation.coords.longitude,
-        });
-        setLocationError(null);
-      } catch (error) {
-        console.error("Error getting location:", error);
-        setLocationError(
-          `Failed to get location: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`
+      } catch (reverseGeocodeError) {
+        console.error("Reverse geocoding error:", reverseGeocodeError);
+        setAddress(
+          `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`
         );
       }
+
+      setLocation(currentLocation);
+      setMainLocationCoords(coords);
+      setLocationError(null);
+    } catch (error) {
+      console.error("Error getting location:", error);
+      setLocationError(
+        `Failed to get location: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setIsLoadingLocation(false);
     }
@@ -258,40 +148,14 @@ export default function MapsScreen() {
     fetchLocation();
   }, []);
 
-  const previousLocations = [
-    {
-      id: 1,
-      address: "401 West Springfield Ave",
-      location: "Philadelphia, PA 19118",
-      color: color1,
-      icon: "house.fill",
-      image: require("@/assets/images/map.png"),
-    },
-    {
-      id: 2,
-      address: "123 Business Street",
-      location: "New York, NY 10001",
-      color: color2,
-      icon: "location.fill",
-      image: require("@/assets/images/map2.png"),
-    },
-    {
-      id: 3,
-      address: "456 Fitness Avenue",
-      location: "Boston, MA 02115",
-      color: color3,
-      icon: "map.fill",
-      image: require("@/assets/images/map.png"),
-    },
-    {
-      id: 4,
-      address: "789 Nature Park Road",
-      location: "San Francisco, CA 94102",
-      color: color4,
-      icon: "mappin.circle.fill",
-      image: require("@/assets/images/map2.png"),
-    },
-  ];
+  const previousLocations = filteredZones.slice(0, 4).map((zone) => ({
+    id: zone.id,
+    address: zone.address,
+    location: zone.location,
+    color: zone.color,
+    icon: zone.icon,
+    image: zone.image || require("@/assets/images/map.png"),
+  }));
 
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
@@ -343,18 +207,13 @@ export default function MapsScreen() {
     };
   });
 
-  const handleLocationPress = (locationId: number) => {
-    const nearbyLocations = getNearbyLocations();
-    const selectedLocation = nearbyLocations.find(
-      (loc) => loc.id === locationId
-    );
-
-    if (selectedLocation && mapRef.current) {
-      // Center map on selected location without hiding others
+  const handleZonePress = (zoneId: number) => {
+    const zone = zones.find((z) => z.id === zoneId);
+    if (zone && mapRef.current) {
       mapRef.current.animateToRegion(
         {
-          latitude: selectedLocation.latitude,
-          longitude: selectedLocation.longitude,
+          latitude: zone.latitude,
+          longitude: zone.longitude,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         },
@@ -363,8 +222,242 @@ export default function MapsScreen() {
     }
   };
 
+  // Calculate distance between two coordinates in kilometers
+  const calculateDistance = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ): number => {
+    const R = 6371; // Radius of the Earth in km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const performSearch = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      setSelectedPlaces([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      // Use enhanced places search
+      const centerLat = mainLocationCoords?.latitude;
+      const centerLon = mainLocationCoords?.longitude;
+
+      const results = await searchPlacesEnhanced(query, centerLat, centerLon);
+
+      // If we have user location, find the closest result
+      if (results.length > 0 && centerLat && centerLon) {
+        // Calculate distances and sort by closest
+        const resultsWithDistance = results.map((result) => ({
+          ...result,
+          distance: calculateDistance(
+            centerLat,
+            centerLon,
+            result.latitude,
+            result.longitude
+          ),
+        }));
+
+        // Sort by distance (closest first)
+        resultsWithDistance.sort((a, b) => a.distance - b.distance);
+
+        // Keep only the closest result
+        const closestResult = resultsWithDistance[0];
+
+        // Show all results in dropdown but only closest on map
+        setSearchResults(resultsWithDistance);
+        setSelectedPlaces([closestResult]);
+
+        // Navigate to closest result
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(
+            {
+              latitude: closestResult.latitude,
+              longitude: closestResult.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            },
+            500
+          );
+        }
+      } else if (results.length > 0) {
+        // No user location, show all results
+        setSearchResults(results);
+        setSelectedPlaces(results);
+
+        // Fit map to show all results
+        if (mapRef.current && results.length > 0) {
+          const coordinates = results.map((r) => ({
+            latitude: r.latitude,
+            longitude: r.longitude,
+          }));
+
+          // Calculate bounds
+          const lats = coordinates.map((c) => c.latitude);
+          const lons = coordinates.map((c) => c.longitude);
+          const minLat = Math.min(...lats);
+          const maxLat = Math.max(...lats);
+          const minLon = Math.min(...lons);
+          const maxLon = Math.max(...lons);
+
+          const latDelta = Math.max(maxLat - minLat, 0.01) * 1.5;
+          const lonDelta = Math.max(maxLon - minLon, 0.01) * 1.5;
+
+          // Use animateToRegion with calculated bounds
+          const centerLat = (minLat + maxLat) / 2;
+          const centerLon = (minLon + maxLon) / 2;
+
+          mapRef.current.animateToRegion(
+            {
+              latitude: centerLat,
+              longitude: centerLon,
+              latitudeDelta: latDelta,
+              longitudeDelta: lonDelta,
+            },
+            500
+          );
+        }
+      } else {
+        setSearchResults([]);
+        setSelectedPlaces([]);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      setSearchResults([]);
+      setSelectedPlaces([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (query.length < 2) {
+      setSearchResults([]);
+      setSelectedPlaces([]);
+      setIsSearching(false);
+      return;
+    }
+
+    // Debounce search by 500ms
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(query);
+    }, 500);
+  };
+
+  useEffect(() => {
+    // Cleanup timeout on unmount
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSelectSearchResult = (result: Place) => {
+    if (mapRef.current) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: result.latitude,
+          longitude: result.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        500
+      );
+      // Keep results visible but highlight selected
+      setSearchQuery(result.name);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedPlaces([]);
+  };
+
+  const getPlaceIcon = (place: Place): string => {
+    const type = place.type?.toLowerCase() || "";
+    if (
+      type.includes("restaurant") ||
+      type.includes("food") ||
+      type.includes("cafe")
+    ) {
+      return "fork.knife";
+    }
+    if (
+      type.includes("shop") ||
+      type.includes("store") ||
+      type.includes("mall")
+    ) {
+      return "bag.fill";
+    }
+    if (type.includes("gas") || type.includes("fuel")) {
+      return "fuelpump.fill";
+    }
+    if (type.includes("hotel") || type.includes("lodging")) {
+      return "bed.double.fill";
+    }
+    if (type.includes("hospital") || type.includes("pharmacy")) {
+      return "cross.case.fill";
+    }
+    if (type.includes("school") || type.includes("university")) {
+      return "book.fill";
+    }
+    if (type.includes("park") || type.includes("garden")) {
+      return "tree.fill";
+    }
+    return "mappin.circle.fill";
+  };
+
+  const getPlaceColor = (place: Place): string => {
+    const type = place.type?.toLowerCase() || "";
+    if (
+      type.includes("restaurant") ||
+      type.includes("food") ||
+      type.includes("cafe")
+    ) {
+      return "#FF6B6B";
+    }
+    if (type.includes("shop") || type.includes("store")) {
+      return "#4ECDC4";
+    }
+    if (type.includes("business")) {
+      return "#95E1D3";
+    }
+    return "#95A5A6";
+  };
+
   const handlePreviousLocationPress = (locationId: number) => {
-    router.push("/zone-detail");
+    router.push(`/zone-detail?id=${locationId}`);
+  };
+
+  const handleShareLocation = async (e: any, locationId: number) => {
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === locationId);
+    if (zone) {
+      await shareZone(zone);
+    }
   };
 
   return (
@@ -427,86 +520,346 @@ export default function MapsScreen() {
                   strokeColor="rgba(150, 150, 150, 0.5)"
                   fillColor="rgba(200, 200, 200, 0.1)"
                 />
-                {/* Nearby locations with different icons and colors */}
-                {mainLocationCoords &&
-                  getNearbyLocations().map((nearby) => (
-                    <React.Fragment key={nearby.id}>
-                      <Marker
-                        coordinate={{
-                          latitude: nearby.latitude,
-                          longitude: nearby.longitude,
-                        }}
-                        title={nearby.name}
-                        description={`${nearby.type} - ${nearby.radius}m radius`}
-                        onPress={() => handleLocationPress(nearby.id)}
+                {/* Search result markers */}
+                {selectedPlaces.map((place, index) => (
+                  <Marker
+                    key={place.id || `place_${index}`}
+                    coordinate={{
+                      latitude: place.latitude,
+                      longitude: place.longitude,
+                    }}
+                    title={place.name}
+                    description={place.address}
+                    onPress={() => handleSelectSearchResult(place)}
+                  >
+                    <View
+                      style={[
+                        styles.customMarker,
+                        { backgroundColor: getPlaceColor(place) },
+                      ]}
+                    >
+                      <IconSymbol
+                        name={getPlaceIcon(place) as any}
+                        size={20}
+                        color="#fff"
+                      />
+                    </View>
+                  </Marker>
+                ))}
+                {/* Display actual zones */}
+                {displayZones.map((zone) => (
+                  <React.Fragment key={zone.id}>
+                    <Marker
+                      coordinate={{
+                        latitude: zone.latitude,
+                        longitude: zone.longitude,
+                      }}
+                      title={zone.title}
+                      description={zone.address}
+                      onPress={() => handleZonePress(zone.id)}
+                    >
+                      <View
+                        style={[
+                          styles.customMarker,
+                          { backgroundColor: zone.color },
+                        ]}
                       >
-                        <View
+                        <IconSymbol
+                          name={zone.icon as any}
+                          size={24}
+                          color="#fff"
+                        />
+                      </View>
+                    </Marker>
+                    <Circle
+                      center={{
+                        latitude: zone.latitude,
+                        longitude: zone.longitude,
+                      }}
+                      radius={zone.radius}
+                      strokeWidth={2}
+                      strokeColor={zone.color + "80"}
+                      fillColor={zone.color + "20"}
+                    />
+                  </React.Fragment>
+                ))}
+              </MapView>
+              {/* Create Zone FAB */}
+              <TouchableOpacity
+                style={[
+                  styles.fab,
+                  {
+                    backgroundColor: textColor,
+                    bottom: insets.bottom + 100,
+                  },
+                ]}
+                onPress={() => router.push("/create-zone")}
+                activeOpacity={0.8}
+              >
+                <IconSymbol name="plus" size={24} color={backgroundColor} />
+              </TouchableOpacity>
+
+              {/* Search Input Overlay */}
+              <View style={[styles.searchContainer, { top: insets.top + 20 }]}>
+                {/* Zone Filters */}
+                <View style={styles.filtersContainer}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filtersScrollContent}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.filterChip,
+                        {
+                          backgroundColor:
+                            selectedZoneFilter === null
+                              ? textColor
+                              : backgroundColor,
+                          borderColor,
+                        },
+                      ]}
+                      onPress={() => setSelectedZoneFilter(null)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          {
+                            color:
+                              selectedZoneFilter === null
+                                ? backgroundColor
+                                : textColor,
+                          },
+                        ]}
+                      >
+                        All
+                      </Text>
+                    </TouchableOpacity>
+                    {Array.from(new Set(zones.map((z) => z.icon))).map(
+                      (icon) => (
+                        <TouchableOpacity
+                          key={icon}
                           style={[
-                            styles.customMarker,
-                            { backgroundColor: nearby.color },
+                            styles.filterChip,
+                            {
+                              backgroundColor:
+                                selectedZoneFilter === icon
+                                  ? textColor
+                                  : backgroundColor,
+                              borderColor,
+                            },
                           ]}
+                          onPress={() =>
+                            setSelectedZoneFilter(
+                              selectedZoneFilter === icon ? null : icon
+                            )
+                          }
                         >
                           <IconSymbol
-                            name={nearby.icon as any}
-                            size={24}
-                            color="#fff"
+                            name={icon as any}
+                            size={16}
+                            color={
+                              selectedZoneFilter === icon
+                                ? backgroundColor
+                                : textColor
+                            }
                           />
-                        </View>
-                      </Marker>
-                      <Circle
-                        center={{
-                          latitude: nearby.latitude,
-                          longitude: nearby.longitude,
-                        }}
-                        radius={nearby.radius}
-                        strokeWidth={2}
-                        strokeColor={nearby.color + "80"}
-                        fillColor={nearby.color + "20"}
-                      />
-                    </React.Fragment>
-                  ))}
-              </MapView>
-              {/* Location Label Overlay */}
-              <View style={styles.locationLabelContainer}>
-                <View
-                  style={[
-                    styles.locationLabel,
-                    { backgroundColor: backgroundColor + "E6", borderColor },
-                  ]}
-                >
-                  <IconSymbol name="house.fill" size={16} color={textColor} />
-                  <Text
-                    style={[styles.locationLabelText, { color: textColor }]}
-                  >
-                    {address ? address.split(",")[0] : "I am at my house"}
-                  </Text>
+                        </TouchableOpacity>
+                      )
+                    )}
+                  </ScrollView>
                 </View>
+                <BlurView intensity={80} style={styles.searchInputBlur}>
+                  <View
+                    style={[
+                      styles.searchInputContainer,
+                      {
+                        borderColor,
+                      },
+                    ]}
+                  >
+                    <IconSymbol
+                      name="magnifyingglass"
+                      size={18}
+                      color={muteTextColor}
+                    />
+                    <TextInput
+                      placeholder="Search location..."
+                      placeholderTextColor={muteTextColor}
+                      style={[styles.searchInput, { color: textColor }]}
+                      value={searchQuery}
+                      onChangeText={handleSearch}
+                    />
+                    {isSearching && (
+                      <ActivityIndicator size="small" color={textColor} />
+                    )}
+                    {searchQuery.length > 0 && !isSearching && (
+                      <TouchableOpacity onPress={handleClearSearch}>
+                        <IconSymbol
+                          name="xmark"
+                          size={18}
+                          color={muteTextColor}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </BlurView>
+                {/* Search Results */}
+                {searchResults.length > 0 && (
+                  <View
+                    style={[
+                      styles.searchResultsContainer,
+                      {
+                        backgroundColor: backgroundColor,
+                        borderColor,
+                      },
+                    ]}
+                  >
+                    <View style={styles.searchResultsHeader}>
+                      <View style={styles.searchResultsHeaderLeft}>
+                        <Text
+                          style={[
+                            styles.searchResultsCount,
+                            { color: muteTextColor },
+                          ]}
+                        >
+                          {searchResults.length} result
+                          {searchResults.length !== 1 ? "s" : ""} found
+                        </Text>
+                        {mainLocationCoords && address && (
+                          <Text
+                            style={[
+                              styles.referenceLocation,
+                              { color: muteTextColor },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            Near: {address}
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity onPress={handleClearSearch}>
+                        <Text
+                          style={[styles.clearButton, { color: textColor }]}
+                        >
+                          Clear
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <ScrollView
+                      style={styles.searchResultsList}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {searchResults.map((result, index) => (
+                        <TouchableOpacity
+                          key={result.id || index}
+                          style={[
+                            styles.searchResultItem,
+                            index < searchResults.length - 1 && {
+                              borderBottomWidth: 1,
+                              borderBottomColor: borderColor + "30",
+                            },
+                          ]}
+                          onPress={() => handleSelectSearchResult(result)}
+                        >
+                          <View
+                            style={[
+                              styles.searchResultIconContainer,
+                              { backgroundColor: getPlaceColor(result) + "20" },
+                            ]}
+                          >
+                            <IconSymbol
+                              name={getPlaceIcon(result) as any}
+                              size={20}
+                              color={getPlaceColor(result)}
+                            />
+                          </View>
+                          <View style={styles.searchResultTextContainer}>
+                            <View style={styles.searchResultHeader}>
+                              <Text
+                                style={[
+                                  styles.searchResultTitle,
+                                  { color: textColor },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {result.name}
+                              </Text>
+                              {result.type && result.type !== "address" && (
+                                <View
+                                  style={[
+                                    styles.typeBadge,
+                                    {
+                                      backgroundColor:
+                                        getPlaceColor(result) + "20",
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.typeBadgeText,
+                                      { color: getPlaceColor(result) },
+                                    ]}
+                                  >
+                                    {result.type}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            {result.address &&
+                              result.address !== result.name && (
+                                <Text
+                                  style={[
+                                    styles.searchResultAddress,
+                                    { color: muteTextColor },
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  {result.address}
+                                </Text>
+                              )}
+                            {(result as any).distance !== undefined && (
+                              <Text
+                                style={[
+                                  styles.distanceText,
+                                  { color: muteTextColor },
+                                ]}
+                              >
+                                {(result as any).distance < 1
+                                  ? `${Math.round(
+                                      (result as any).distance * 1000
+                                    )}m away`
+                                  : `${(result as any).distance.toFixed(
+                                      1
+                                    )}km away`}
+                                {index === 0 && (
+                                  <Text style={{ fontWeight: "600" }}>
+                                    {" "}
+                                    • Closest
+                                  </Text>
+                                )}
+                              </Text>
+                            )}
+                          </View>
+                          <IconSymbol
+                            name="chevron.right"
+                            size={16}
+                            color={muteTextColor}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
             </>
           ) : (
-            <View style={styles.errorContainer}>
-              <IconSymbol
-                name="location.fill"
-                size={48}
-                color={muteTextColor}
-              />
-              <Text style={[styles.errorText, { color: textColor }]}>
-                {locationError || "Unable to load map"}
-              </Text>
-              {locationError && (
-                <TouchableOpacity
-                  style={[
-                    styles.retryButton,
-                    { borderColor, backgroundColor: backgroundColor },
-                  ]}
-                  onPress={fetchLocation}
-                >
-                  <Text style={[styles.retryButtonText, { color: textColor }]}>
-                    Retry
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <ErrorState
+              title="Location Error"
+              message={locationError || "Unable to load map"}
+              onRetry={fetchLocation}
+              retryText="Retry"
+            />
           )}
         </View>
 
@@ -545,12 +898,9 @@ export default function MapsScreen() {
               {previousLocations.map((location) => (
                 <TouchableOpacity
                   key={location.id}
-                  style={[
-                    styles.locationCard,
-                    { backgroundColor: location.color, borderColor },
-                  ]}
+                  style={[styles.locationCard, { backgroundColor }]}
                   onPress={() => handlePreviousLocationPress(location.id)}
-                  activeOpacity={0.8}
+                  activeOpacity={0.9}
                 >
                   <View style={styles.locationMapContainer}>
                     <Image
@@ -561,10 +911,7 @@ export default function MapsScreen() {
                     {/* Share button */}
                     <TouchableOpacity
                       style={styles.shareButton}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        // Handle share action
-                      }}
+                      onPress={(e) => handleShareLocation(e, location.id)}
                     >
                       <IconSymbol
                         name="square.and.arrow.up"
@@ -572,31 +919,29 @@ export default function MapsScreen() {
                         color="#000"
                       />
                     </TouchableOpacity>
-                    {/* Blur overlay at bottom */}
-                    <BlurView intensity={80} style={styles.blurOverlay}>
-                      <View style={styles.cardContent}>
+                    {/* Content at bottom */}
+                    <View
+                      style={[styles.cardInfoContainer, { backgroundColor }]}
+                    >
+                      <Text style={[styles.cardAddress, { color: textColor }]}>
+                        {location.address}
+                      </Text>
+                      <View style={styles.cardLocation}>
+                        <IconSymbol
+                          name="paperplane.fill"
+                          size={12}
+                          color={muteTextColor}
+                        />
                         <Text
-                          style={[styles.cardAddress, { color: textColor }]}
+                          style={[
+                            styles.cardLocationText,
+                            { color: muteTextColor },
+                          ]}
                         >
-                          {location.address}
+                          {location.location}
                         </Text>
-                        <View style={styles.cardLocation}>
-                          <IconSymbol
-                            name="paperplane.fill"
-                            size={12}
-                            color={muteTextColor}
-                          />
-                          <Text
-                            style={[
-                              styles.cardLocationText,
-                              { color: muteTextColor },
-                            ]}
-                          >
-                            {location.location}
-                          </Text>
-                        </View>
                       </View>
-                    </BlurView>
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -652,25 +997,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  locationLabelContainer: {
+  searchContainer: {
     position: "absolute",
-    top: 60,
     left: 0,
     right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
+    paddingHorizontal: 20,
     zIndex: 10,
   },
-  locationLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+  searchInputBlur: {
+    borderRadius: 25,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -680,9 +1016,110 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  locationLabelText: {
+  searchInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 25,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
+  searchResultsContainer: {
+    marginTop: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    maxHeight: 300,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: "hidden",
+  },
+  searchResultsList: {
+    maxHeight: 300,
+  },
+  searchResultsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  searchResultsHeaderLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  searchResultsCount: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  referenceLocation: {
+    fontSize: 11,
+    fontStyle: "italic",
+  },
+  clearButton: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  searchResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    paddingHorizontal: 20,
+  },
+  searchResultIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchResultTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  searchResultHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  searchResultTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    flex: 1,
+  },
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  searchResultAddress: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  distanceText: {
+    fontSize: 12,
+    marginTop: 2,
   },
   refreshButton: {
     width: 40,
@@ -708,15 +1145,6 @@ const styles = StyleSheet.create({
     height: BOTTOM_SHEET_MAX_HEIGHT,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: -4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
   },
   handleBar: {
     alignItems: "center",
@@ -746,7 +1174,6 @@ const styles = StyleSheet.create({
   locationCard: {
     borderRadius: 16,
     overflow: "hidden",
-    borderWidth: 1,
   },
   locationMapContainer: {
     width: "100%",
@@ -764,30 +1191,19 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  blurOverlay: {
+  cardInfoContainer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
+    padding: 16,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
-    overflow: "hidden",
-  },
-  cardContent: {
-    padding: 16,
   },
   cardAddress: {
     fontSize: 16,
@@ -850,6 +1266,28 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 3,
   },
+  filtersContainer: {
+    marginBottom: 12,
+  },
+  filtersScrollContent: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    minWidth: 44,
+    height: 36,
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
   backButton: {
     position: "absolute",
     left: 20,
@@ -868,5 +1306,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
+  },
+  fab: {
+    position: "absolute",
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

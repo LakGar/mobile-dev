@@ -1,7 +1,12 @@
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useToast } from "@/components/ui/toast-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useActivityStore } from "@/stores/useActivityStore";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { useUserStore } from "@/stores/useUserStore";
+import { useZoneStore } from "@/stores/useZoneStore";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React from "react";
@@ -25,78 +30,61 @@ export default function ProfileScreen() {
   const borderColor = useThemeColor({}, "muteText");
   const insets = useSafeAreaInsets();
 
-  const user = {
-    username: "lakshaygarg",
-    name: "Lakshay Garg",
-    bio: "Zone management enthusiast\n📍 Philadelphia, PA",
-    profileImage: require("@/assets/images/icon.png"),
-  };
+  const { user, fetchUser, isLoading: isLoadingUser } = useUserStore();
+  const { zones, fetchZones } = useZoneStore();
+  const { activities, fetchActivities } = useActivityStore();
+  const { logout } = useAuthStore();
+  const { showToast } = useToast();
+
+  // Fetch data on mount
+  React.useEffect(() => {
+    if (!user) {
+      fetchUser();
+    }
+    fetchZones();
+    fetchActivities();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Show loading or empty state if user is not loaded
+  if (!user && isLoadingUser) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: textColor }]}>
+            Loading...
+          </Text>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!user) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: textColor }]}>
+            No user data
+          </Text>
+        </View>
+      </ThemedView>
+    );
+  }
 
   const stats = {
-    zones: 12,
-    activity: 48,
-    streak: 7,
+    zones: zones.length,
+    activity: activities.length,
+    streak: user.streak || 0,
   };
 
-  const zones = [
-    {
-      id: 1,
-      title: "Home Zone",
-      image: require("@/assets/images/map.png"),
-      icon: "house.fill",
-    },
-    {
-      id: 2,
-      title: "Work Zone",
-      image: require("@/assets/images/map2.png"),
-      icon: "location.fill",
-    },
-    {
-      id: 3,
-      title: "Gym Zone",
-      image: require("@/assets/images/map.png"),
-      icon: "map.fill",
-    },
-    {
-      id: 4,
-      title: "Park Zone",
-      image: require("@/assets/images/map2.png"),
-      icon: "mappin.circle.fill",
-    },
-    {
-      id: 5,
-      title: "Coffee Zone",
-      image: require("@/assets/images/map.png"),
-      icon: "house.fill",
-    },
-    {
-      id: 6,
-      title: "Library Zone",
-      image: require("@/assets/images/map2.png"),
-      icon: "location.fill",
-    },
-    {
-      id: 7,
-      title: "Beach Zone",
-      image: require("@/assets/images/map.png"),
-      icon: "map.fill",
-    },
-    {
-      id: 8,
-      title: "Mall Zone",
-      image: require("@/assets/images/map2.png"),
-      icon: "mappin.circle.fill",
-    },
-    {
-      id: 9,
-      title: "Office Zone",
-      image: require("@/assets/images/map.png"),
-      icon: "house.fill",
-    },
-  ];
-
   const handleZonePress = (zoneId: number) => {
-    router.push("/zone-detail");
+    router.push(`/zone-detail?id=${zoneId}`);
+  };
+
+  const handleLogout = () => {
+    logout();
+    showToast("Logged out successfully");
+    router.replace("/main");
   };
 
   return (
@@ -112,12 +100,24 @@ export default function ProfileScreen() {
         {/* Header with Settings */}
         <View style={styles.header}>
           <ThemedText style={styles.headerUsername}>{user.username}</ThemedText>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => router.push("/settings")}
-          >
-            <IconSymbol name="gearshape.fill" size={24} color={textColor} />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => router.push("/settings")}
+            >
+              <IconSymbol name="gearshape.fill" size={24} color={textColor} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={handleLogout}
+            >
+              <IconSymbol
+                name="rectangle.portrait.and.arrow.right"
+                size={24}
+                color={textColor}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Profile Section */}
@@ -183,33 +183,59 @@ export default function ProfileScreen() {
 
         {/* Zones Grid */}
         <View style={styles.zonesSection}>
-          <View style={styles.zonesGrid}>
-            {zones.map((zone, index) => (
+          {zones.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <IconSymbol name="mappin.slash" size={64} color={muteTextColor} />
+              <Text style={[styles.emptyTitle, { color: textColor }]}>
+                No zones yet
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: muteTextColor }]}>
+                Create your first zone to get started
+              </Text>
               <TouchableOpacity
-                key={zone.id}
-                style={[
-                  styles.zoneItem,
-                  {
-                    width: ZONE_ITEM_SIZE,
-                    height: ZONE_ITEM_SIZE,
-                    marginRight: (index + 1) % 3 === 0 ? 0 : 1,
-                    marginBottom: index < zones.length - 3 ? 1 : 0,
-                  },
-                ]}
-                onPress={() => handleZonePress(zone.id)}
-                activeOpacity={0.8}
+                style={[styles.emptyButton, { backgroundColor: textColor }]}
+                onPress={() => router.push("/create-zone")}
               >
-                <Image
-                  source={zone.image}
-                  style={styles.zoneImage}
-                  contentFit="cover"
-                />
-                <View style={styles.zoneOverlay}>
-                  <IconSymbol name={zone.icon as any} size={24} color="#fff" />
-                </View>
+                <Text
+                  style={[styles.emptyButtonText, { color: backgroundColor }]}
+                >
+                  Create Zone
+                </Text>
               </TouchableOpacity>
-            ))}
-          </View>
+            </View>
+          ) : (
+            <View style={styles.zonesGrid}>
+              {zones.map((zone, index) => (
+                <TouchableOpacity
+                  key={zone.id}
+                  style={[
+                    styles.zoneItem,
+                    {
+                      width: ZONE_ITEM_SIZE,
+                      height: ZONE_ITEM_SIZE,
+                      marginRight: (index + 1) % 3 === 0 ? 0 : 1,
+                      marginBottom: index < zones.length - 3 ? 1 : 0,
+                    },
+                  ]}
+                  onPress={() => handleZonePress(zone.id)}
+                  activeOpacity={0.8}
+                >
+                  <Image
+                    source={zone.image || require("@/assets/images/map.png")}
+                    style={styles.zoneImage}
+                    contentFit="cover"
+                  />
+                  <View style={styles.zoneOverlay}>
+                    <IconSymbol
+                      name={zone.icon as any}
+                      size={24}
+                      color="#fff"
+                    />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </ThemedView>
@@ -236,6 +262,10 @@ const styles = StyleSheet.create({
   headerUsername: {
     fontSize: 20,
     fontWeight: "700",
+  },
+  headerButtons: {
+    flexDirection: "row",
+    gap: 12,
   },
   settingsButton: {
     padding: 4,
@@ -325,5 +355,41 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.3)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginTop: 20,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  emptyButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 100,
+  },
+  loadingText: {
+    fontSize: 16,
   },
 });

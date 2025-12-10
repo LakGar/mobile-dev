@@ -1,9 +1,13 @@
-import { ThemedView } from "@/components/themed-view";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useToast } from "@/components/ui/toast-provider";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useZoneStore } from "@/stores/useZoneStore";
+import { NotificationOption } from "@/types";
+import { shareZone } from "@/utils/share";
 import { Image } from "expo-image";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -27,8 +31,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type NotificationOption = "enter" | "exit" | "both";
-
 export default function ZoneDetailModal() {
   const muteTextColor = useThemeColor({}, "muteText");
   const textColor = useThemeColor({}, "text");
@@ -36,40 +38,90 @@ export default function ZoneDetailModal() {
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
 
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { getZoneById, updateZone, deleteZone } = useZoneStore();
+  const zone = id ? getZoneById(parseInt(id)) : null;
+
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
   const [isEditMode, setIsEditMode] = useState(false);
-  const [icon, setIcon] = useState("mappin.circle.fill");
-  const [title, setTitle] = useState("Sample Location");
-  const [description, setDescription] = useState(
-    "This is a sample description of the location"
+  const [icon, setIcon] = useState(zone?.icon || "mappin.circle.fill");
+  const [title, setTitle] = useState(zone?.title || "");
+  const [description, setDescription] = useState(zone?.description || "");
+  const [mapLocation, setMapLocation] = useState(
+    zone ? `${zone.address}, ${zone.location}` : ""
   );
-  const [mapLocation, setMapLocation] = useState("123 Main St, City");
   const [notificationOption, setNotificationOption] =
-    useState<NotificationOption>("both");
+    useState<NotificationOption>(zone?.notificationOption || "both");
   const [notificationText, setNotificationText] = useState(
-    "You have entered the zone"
+    zone?.notificationText || "You have entered the zone"
   );
+
+  useEffect(() => {
+    if (zone) {
+      setIcon(zone.icon);
+      setTitle(zone.title);
+      setDescription(zone.description || "");
+      setMapLocation(`${zone.address}, ${zone.location}`);
+      setNotificationOption(zone.notificationOption);
+      setNotificationText(zone.notificationText);
+    }
+  }, [zone]);
 
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
+  const isClosingRef = React.useRef(false);
 
-  const panGesture = Gesture.Pan()
-    .onUpdate((event) => {
-      if (event.translationY > 0) {
-        translateY.value = event.translationY;
-        opacity.value = 1 - event.translationY / 400;
-      }
-    })
-    .onEnd((event) => {
-      if (event.translationY > 150) {
-        translateY.value = withSpring(1000);
-        opacity.value = withSpring(0, {}, () => {
-          runOnJS(router.back)();
-        });
-      } else {
-        translateY.value = withSpring(0);
-        opacity.value = withSpring(1);
-      }
-    });
+  const handleClose = React.useCallback(() => {
+    if (!isClosingRef.current) {
+      isClosingRef.current = true;
+      router.back();
+    }
+  }, []);
+
+  const panGesture = React.useMemo(
+    () =>
+      Gesture.Pan()
+        .onUpdate((event) => {
+          if (event.translationY > 0 && !isClosingRef.current) {
+            translateY.value = event.translationY;
+            opacity.value = Math.max(0, 1 - event.translationY / 400);
+          }
+        })
+        .onEnd((event) => {
+          if (isClosingRef.current) return;
+
+          if (event.translationY > 150) {
+            isClosingRef.current = true;
+            translateY.value = withSpring(1000, {
+              damping: 20,
+              stiffness: 90,
+            });
+            opacity.value = withSpring(
+              0,
+              {
+                damping: 20,
+                stiffness: 90,
+              },
+              (finished) => {
+                if (finished) {
+                  runOnJS(handleClose)();
+                }
+              }
+            );
+          } else {
+            translateY.value = withSpring(0, {
+              damping: 20,
+              stiffness: 90,
+            });
+            opacity.value = withSpring(1, {
+              damping: 20,
+              stiffness: 90,
+            });
+          }
+        }),
+    [handleClose, translateY, opacity]
+  );
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -78,13 +130,64 @@ export default function ZoneDetailModal() {
     };
   });
 
-  const handleClose = () => {
-    router.back();
+  const { showToast } = useToast();
+
+  const handleSave = () => {
+    if (zone) {
+      updateZone(zone.id, {
+        icon,
+        title,
+        description,
+        notificationOption,
+        notificationText,
+      });
+      showToast("Zone updated successfully!");
+    }
+    setIsEditMode(false);
   };
+
+  const handleShare = async () => {
+    if (zone) {
+      await shareZone(zone);
+    }
+  };
+
+  const handleDelete = () => {
+    if (zone) {
+      deleteZone(zone.id);
+      showToast("Zone deleted successfully");
+      router.back();
+    }
+  };
+
+  if (!zone) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <IconSymbol
+            name="exclamationmark.triangle"
+            size={48}
+            color={muteTextColor}
+          />
+          <Text style={[styles.errorText, { color: textColor }]}>
+            Zone not found
+          </Text>
+          <TouchableOpacity
+            style={[styles.backButton, { borderColor }]}
+            onPress={handleClose}
+          >
+            <Text style={[styles.backButtonText, { color: textColor }]}>
+              Go Back
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <ThemedView style={styles.container}>
+      <View style={styles.container}>
         <GestureDetector gesture={panGesture}>
           <Animated.View
             style={[styles.modalContent, { backgroundColor }, animatedStyle]}
@@ -105,21 +208,45 @@ export default function ZoneDetailModal() {
                 <IconSymbol name="xmark" size={24} color={textColor} />
               </TouchableOpacity>
               {!isEditMode && (
-                <TouchableOpacity
-                  onPress={() => setIsEditMode(true)}
-                  style={styles.editButton}
-                >
-                  <Text style={[styles.editButtonText, { color: textColor }]}>
-                    Edit
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.headerRight}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push(`/zone-statistics?id=${zone.id}`)
+                    }
+                    style={styles.shareButton}
+                  >
+                    <IconSymbol
+                      name="chart.bar.fill"
+                      size={20}
+                      color={textColor}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleShare}
+                    style={styles.shareButton}
+                  >
+                    <IconSymbol
+                      name="square.and.arrow.up"
+                      size={20}
+                      color={textColor}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setIsEditMode(true)}
+                    style={styles.editButton}
+                  >
+                    <Text style={[styles.editButtonText, { color: textColor }]}>
+                      Edit
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
 
             {/* Map View */}
             <View style={styles.mapContainer}>
               <Image
-                source={require("@/assets/images/map2.png")}
+                source={zone.image || require("@/assets/images/map2.png")}
                 style={styles.mapImage}
                 contentFit="cover"
               />
@@ -324,7 +451,7 @@ export default function ZoneDetailModal() {
                 {isEditMode && (
                   <View style={styles.buttonContainer}>
                     <TouchableOpacity
-                      onPress={() => setIsEditMode(false)}
+                      onPress={handleSave}
                       style={[
                         styles.saveButton,
                         { backgroundColor: textColor },
@@ -335,7 +462,18 @@ export default function ZoneDetailModal() {
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => setIsEditMode(false)}
+                      onPress={() => {
+                        setIsEditMode(false);
+                        // Reset to original values
+                        if (zone) {
+                          setIcon(zone.icon);
+                          setTitle(zone.title);
+                          setDescription(zone.description || "");
+                          setMapLocation(`${zone.address}, ${zone.location}`);
+                          setNotificationOption(zone.notificationOption);
+                          setNotificationText(zone.notificationText);
+                        }
+                      }}
                       style={styles.cancelButton}
                     >
                       <Text
@@ -344,13 +482,34 @@ export default function ZoneDetailModal() {
                         Cancel
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setShowDeleteDialog(true)}
+                      style={[styles.deleteButton, { borderColor: "#FF3B30" }]}
+                    >
+                      <IconSymbol name="trash.fill" size={18} color="#FF3B30" />
+                      <Text
+                        style={[styles.deleteButtonText, { color: "#FF3B30" }]}
+                      >
+                        Delete Zone
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </ScrollView>
             </KeyboardAvoidingView>
           </Animated.View>
         </GestureDetector>
-      </ThemedView>
+        <DeleteConfirmationDialog
+          visible={showDeleteDialog}
+          title="Delete Zone"
+          message={`Are you sure you want to delete "${zone?.title}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteDialog(false)}
+          destructive
+        />
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -406,6 +565,14 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 8,
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  shareButton: {
+    padding: 8,
+  },
   editButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -414,6 +581,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   editButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    gap: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  backButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  backButtonText: {
     fontSize: 16,
     fontWeight: "600",
   },
@@ -516,5 +705,19 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: "500",
+  },
+  deleteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

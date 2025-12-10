@@ -1,8 +1,10 @@
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { useZoneStore } from "@/stores/useZoneStore";
+import { shareZone } from "@/utils/share";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,128 +14,125 @@ import {
 } from "react-native";
 import { ThemedText } from "../themed-text";
 import { IconSymbol } from "./icon-symbol";
+import { ZoneCardSkeleton } from "./loading-skeleton";
 
 const HomeZoneList = () => {
   const muteTextColor = useThemeColor({}, "muteText");
   const textColor = useThemeColor({}, "text");
-  const color1 = useThemeColor({}, "color1");
-  const color2 = useThemeColor({}, "color2");
-  const color3 = useThemeColor({}, "color3");
-  const color4 = useThemeColor({}, "color4");
-  const borderColor = useThemeColor({}, "muteText");
 
-  const zones = [
-    {
-      id: 1,
-      title: "Home Zone",
-      address: "401 West Springfield Ave",
-      location: "Philadelphia, PA 19118",
-      color: color1,
-      icon: "house.fill",
-    },
-    {
-      id: 2,
-      title: "Work Zone",
-      address: "123 Business Street",
-      location: "New York, NY 10001",
-      color: color2,
-      icon: "location.fill",
-    },
-    {
-      id: 3,
-      title: "Gym Zone",
-      address: "456 Fitness Avenue",
-      location: "Boston, MA 02115",
-      color: color3,
-      icon: "map.fill",
-    },
-    {
-      id: 4,
-      title: "Park Zone",
-      address: "789 Nature Park Road",
-      location: "San Francisco, CA 94102",
-      color: color4,
-      icon: "mappin.circle.fill",
-    },
-  ];
+  const { zones } = useZoneStore();
+  const [isLoading, setIsLoading] = useState(true);
+  const displayedZones = zones.slice(0, 4); // Show first 4 zones
+
+  useEffect(() => {
+    // Simulate loading
+    const timer = setTimeout(() => setIsLoading(false), 500);
+    return () => clearTimeout(timer);
+  }, [zones]);
 
   const handleCardPress = (zoneId: number) => {
-    router.push("/zone-detail");
+    router.push(`/zone-detail?id=${zoneId}`);
+  };
+
+  const handleShare = async (e: any, zoneId: number) => {
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === zoneId);
+    if (zone) {
+      await shareZone(zone);
+    }
+  };
+
+  const handleSeeAll = () => {
+    router.push("/(tabs)/explore");
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <ThemedText style={styles.headerText}>My Zones</ThemedText>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={handleSeeAll}>
           <Text style={[styles.seeAllButtonText, { color: muteTextColor }]}>
             See All
           </Text>
         </TouchableOpacity>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        style={styles.zoneList}
-      >
-        {zones.map((zone) => (
-          <TouchableOpacity
-            key={zone.id}
-            style={[
-              styles.card,
-              { backgroundColor: zone.color, borderColor: zone.color },
-            ]}
-            onPress={() => handleCardPress(zone.id)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.mapContainer}>
-              <Image
-                source={require("@/assets/images/map.png")}
-                style={styles.mapImage}
-                contentFit="cover"
-              />
-              {/* Share button */}
-              <TouchableOpacity
-                style={styles.shareButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  // Handle share action
-                }}
-              >
-                <IconSymbol
-                  name="square.and.arrow.up"
-                  size={16}
-                  color={"#000"}
+      {isLoading ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          style={styles.zoneList}
+        >
+          {[1, 2, 3].map((i) => (
+            <ZoneCardSkeleton key={i} />
+          ))}
+        </ScrollView>
+      ) : displayedZones.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <IconSymbol name="mappin.slash" size={48} color={muteTextColor} />
+          <Text style={[styles.emptyText, { color: muteTextColor }]}>
+            No zones yet. Create your first zone!
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          style={styles.zoneList}
+        >
+          {displayedZones.map((zone) => (
+            <TouchableOpacity
+              key={zone.id}
+              style={[
+                styles.card,
+                { backgroundColor: zone.color, borderColor: zone.color },
+              ]}
+              onPress={() => handleCardPress(zone.id)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.mapContainer}>
+                <Image
+                  source={zone.image || require("@/assets/images/map.png")}
+                  style={styles.mapImage}
+                  contentFit="cover"
                 />
-              </TouchableOpacity>
-              {/* Blur overlay at bottom */}
-              <BlurView intensity={80} style={styles.blurOverlay}>
-                <View style={styles.cardContent}>
-                  <Text style={[styles.cardAddress, { color: textColor }]}>
-                    {zone.address}
-                  </Text>
-                  <View style={styles.cardLocation}>
-                    <IconSymbol
-                      name="paperplane.fill"
-                      size={12}
-                      color={muteTextColor}
-                    />
-                    <Text
-                      style={[
-                        styles.cardLocationText,
-                        { color: muteTextColor },
-                      ]}
-                    >
-                      {zone.location}
+                {/* Share button */}
+                <TouchableOpacity
+                  style={styles.shareButton}
+                  onPress={(e) => handleShare(e, zone.id)}
+                >
+                  <IconSymbol
+                    name="square.and.arrow.up"
+                    size={16}
+                    color={"#000"}
+                  />
+                </TouchableOpacity>
+                {/* Blur overlay at bottom */}
+                <BlurView intensity={30} style={styles.blurOverlay}>
+                  <View style={styles.cardContent}>
+                    <Text style={[styles.cardAddress, { color: "grey" }]}>
+                      {zone.address}
                     </Text>
+                    <View style={styles.cardLocation}>
+                      <IconSymbol
+                        name="paperplane.fill"
+                        size={12}
+                        color={"grey"}
+                      />
+                      <Text
+                        style={[styles.cardLocationText, { color: "grey" }]}
+                      >
+                        {zone.location}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              </BlurView>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+                </BlurView>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -222,5 +221,16 @@ const styles = StyleSheet.create({
   },
   cardLocationText: {
     fontSize: 12,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: "center",
   },
 });

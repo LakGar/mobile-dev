@@ -2,6 +2,7 @@ import { useThemeColor } from "@/hooks/use-theme-color";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { RateAppDialog } from "@/components/ui/rate-app-dialog";
 
 interface SettingItemProps {
   icon: string;
@@ -115,6 +117,7 @@ export default function SettingsScreen() {
   const [backgroundLocation, setBackgroundLocation] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
+  const [showRateDialog, setShowRateDialog] = useState(false);
 
   return (
     <ThemedView style={styles.container}>
@@ -156,12 +159,14 @@ export default function SettingsScreen() {
             icon="lock.fill"
             title="Change Password"
             showArrow
+            onPress={() => router.push("/change-password")}
           />
           <SettingItem
             icon="envelope.fill"
             title="Email & Phone"
             subtitle="Manage contact information"
             showArrow
+            onPress={() => router.push("/email-phone")}
           />
         </View>
 
@@ -213,18 +218,21 @@ export default function SettingsScreen() {
             title="Privacy Settings"
             subtitle="Control who can see your zones"
             showArrow
+            onPress={() => router.push("/privacy-settings")}
           />
           <SettingItem
             icon="eye.fill"
             title="Location Sharing"
             subtitle="Manage location sharing preferences"
             showArrow
+            onPress={() => router.push("/location-sharing")}
           />
           <SettingItem
             icon="key.fill"
             title="Two-Factor Authentication"
             subtitle="Add an extra layer of security"
             showArrow
+            onPress={() => router.push("/two-factor")}
           />
         </View>
 
@@ -236,18 +244,21 @@ export default function SettingsScreen() {
             title="Appearance"
             subtitle="Light, Dark, or System"
             showArrow
+            onPress={() => router.push("/appearance")}
           />
           <SettingItem
             icon="globe"
             title="Language"
             subtitle="English"
             showArrow
+            onPress={() => router.push("/language")}
           />
           <SettingItem
             icon="square.and.arrow.down.fill"
             title="Data & Storage"
             subtitle="Manage cache and downloads"
             showArrow
+            onPress={() => router.push("/data-storage")}
           />
         </View>
 
@@ -258,21 +269,25 @@ export default function SettingsScreen() {
             icon="questionmark.circle.fill"
             title="Help Center"
             showArrow
+            onPress={() => router.push("/help-center")}
           />
           <SettingItem
             icon="envelope.fill"
             title="Contact Us"
             showArrow
+            onPress={() => router.push("/contact-us")}
           />
           <SettingItem
             icon="doc.text.fill"
             title="Terms of Service"
             showArrow
+            onPress={() => router.push("/terms")}
           />
           <SettingItem
             icon="hand.raised.fill"
             title="Privacy Policy"
             showArrow
+            onPress={() => router.push("/privacy-policy")}
           />
         </View>
 
@@ -288,6 +303,7 @@ export default function SettingsScreen() {
             icon="star.fill"
             title="Rate App"
             showArrow
+            onPress={() => setShowRateDialog(true)}
           />
         </View>
 
@@ -300,6 +316,7 @@ export default function SettingsScreen() {
             subtitle="Permanently delete your account and data"
             destructive
             showArrow
+            onPress={() => router.push("/delete-account")}
           />
           <SettingItem
             icon="arrow.clockwise"
@@ -307,9 +324,31 @@ export default function SettingsScreen() {
             subtitle="Reset all app settings to default"
             destructive
             showArrow
+            onPress={() => {
+              Alert.alert(
+                "Reset Settings",
+                "Are you sure you want to reset all settings to default? This action cannot be undone.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Reset",
+                    style: "destructive",
+                    onPress: () => {
+                      // Reset settings logic here
+                      Alert.alert("Success", "Settings have been reset to default");
+                    },
+                  },
+                ]
+              );
+            }}
           />
         </View>
       </ScrollView>
+
+      <RateAppDialog
+        visible={showRateDialog}
+        onClose={() => setShowRateDialog(false)}
+      />
     </ThemedView>
   );
 }

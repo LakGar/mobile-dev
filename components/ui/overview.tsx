@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ThemedText } from "../themed-text";
 import { IconSymbol } from "./icon-symbol";
+import { useOverviewStore } from "@/stores/useOverviewStore";
 
 type TimePeriod = "This Week" | "Month" | "All Time";
 
@@ -22,6 +23,7 @@ const Overview = () => {
       ? "rgba(255, 255, 255, 0.05)"
       : "rgba(0, 0, 0, 0.03)";
 
+  const { stats } = useOverviewStore();
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("This Week");
   const [isOpen, setIsOpen] = useState(false);
 
@@ -35,22 +37,22 @@ const Overview = () => {
   const data = [
     {
       title: "Completed",
-      value: 10,
+      value: stats.completed,
       color: color1,
     },
     {
       title: "Scheduled",
-      value: 10,
+      value: stats.scheduled,
       color: color2,
     },
     {
       title: "Pending",
-      value: 10,
+      value: stats.pending,
       color: color3,
     },
     {
       title: "All Tasks",
-      value: 10,
+      value: stats.allTasks,
       color: color4,
     },
   ];
